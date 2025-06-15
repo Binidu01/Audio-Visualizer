@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Audio Visualizer</title>
+  <style>
+    body { margin: 0; background: #000; overflow: hidden; }
+    #actionButton {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 20px;
+  font-size: 16px;
+  color: #fff;
+  background: #007bff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 1;
+}
+
+    #visualizer { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <button id="actionButton">Start Audio Capture</button>
+  <canvas id="visualizer"></canvas>
+
+  <script>
+    const btn = document.getElementById('actionButton');
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let audioCtx, analyser, stream;
+    let isCapturing = false;
+
+    btn.addEventListener('click', async () => {
+      if (!isCapturing) {
+        try {
+          // 1) Force the share-picker by requesting video + audio
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true
+          });
+
+          // 2) Immediately stop the video track to keep audio only
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) videoTrack.stop();
+
+          // 3) Build the Web Audio graph
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioCtx.createMediaStreamSource(stream);
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+
+          // 4) Update UI & start visuals
+          btn.textContent = 'Stop Audio Capture';
+          btn.style.background = '#dc3545';
+          isCapturing = true;
+          visualize();
+        } catch (err) {
+          console.error('Capture failed:', err);
+          alert('You must grant share-screen permission and pick a tab with audio.');
+        }
+      } else {
+        // Stop everything
+        stream.getTracks().forEach((t) => t.stop());
+        btn.textContent = 'Start Audio Capture';
+        btn.style.background = '#007bff';
+        isCapturing = false;
+      }
+    });
+
+    function visualize() {
+      if (!isCapturing) return;
+      requestAnimationFrame(visualize);
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const baseR = Math.min(cx, cy) * 0.5;
+      const bars = data.length;
+
+      for (let i = 0; i < bars; i++) {
+        const amp = data[i] / 255;
+        const angle = (i / bars) * Math.PI * 2;
+        const r1 = baseR;
+        const r2 = baseR + amp * baseR;
+
+        const x1 = cx + Math.cos(angle) * r1;
+        const y1 = cy + Math.sin(angle) * r1;
+        const x2 = cx + Math.cos(angle) * r2;
+        const y2 = cy + Math.sin(angle) * r2;
+
+        ctx.strokeStyle = `hsl(${(i / bars) * 360},100%,50%)`;
+        ctx.lineWidth = amp * 10;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+    }
+  </script>
+</body>
+</html>
